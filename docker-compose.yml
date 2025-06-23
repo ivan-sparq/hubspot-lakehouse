@@ -2,7 +2,8 @@ version: '3.8'
 
 services:
   unity-catalog:
-    image: unitycatalog/unity-catalog:latest
+    image: unitycatalog/unitycatalog:latest
+    platform: linux/amd64  # Force x86_64 platform for compatibility
     container_name: unity-catalog
     ports:
       - "8080:8080"  # Unity Catalog API
@@ -12,18 +13,30 @@ services:
       - UNITY_CATALOG_HOST=0.0.0.0
       - UNITY_CATALOG_PORT=8080
     volumes:
-      - unity_metadata:/app/metadata
-      - ./config/unity-catalog:/app/config
+      - type: volume
+        source: unitycatalog_data
+        target: /opt/unitycatalog/etc/data
     networks:
       - lakehouse_network
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
+    # healthcheck:
+    #   test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+    #   interval: 30s
+    #   timeout: 10s
+    #   retries: 3
+    # command: ["tail", "-f", "/dev/null"]  # Placeholder command
+  
+  # unity-catalog-ui:
+  #   build:
+  #     context: ui/
+  #     dockerfile: Dockerfile
+  #   ports:
+  #     - "3000:3000"
+  #   depends_on:
+  #     - unity-catalog-server
 
   duckdb:
-    image: duckdb/duckdb:latest
+    image: datacatering/duckdb:v1.3.0
+    platform: linux/amd64  # Force x86_64 platform for compatibility
     container_name: duckdb
     ports:
       - "8081:8081"  # DuckDB HTTP API
@@ -39,17 +52,19 @@ services:
       - lakehouse_network
     command: ["duckdb", "--http", "--http-port", "8081"]
 
-  dbt-core:
-    image: ghcr.io/dbt-labs/dbt-core:latest
+  dbt:
+    # Using the official dbt-core image with a specific version
+    image: ghcr.io/dbt-labs/dbt-core:1.7.0
+    platform: linux/amd64  # Force x86_64 platform for compatibility
     container_name: dbt-core
     volumes:
       - ./dbt:/dbt
       - dbt_models:/dbt/models
       - ./config/dbt:/dbt/config
     environment:
-      - DUCKDB_DATABASE=:memory:
+      - "DUCKDB_DATABASE=:memory:"
       - UNITY_CATALOG_URL=http://unity-catalog:8080
-      - AZURE_STORAGE_ACCOUNT=strprimrosedatalake
+      - AZURE_STORAGE_ACCOUNT=${AZURE_STORAGE_ACCOUNT}
       - AZURE_STORAGE_KEY=${AZURE_STORAGE_KEY}
     working_dir: /dbt
     depends_on:
@@ -62,8 +77,7 @@ services:
     command: tail -f /dev/null
 
 volumes:
-  unity_metadata:
-    driver: local
+  unitycatalog_data:
   dbt_models:
     driver: local
 
