@@ -1,0 +1,72 @@
+version: '3.8'
+
+services:
+  unity-catalog:
+    image: unitycatalog/unity-catalog:latest
+    container_name: unity-catalog
+    ports:
+      - "8080:8080"  # Unity Catalog API
+    environment:
+      - AZURE_STORAGE_ACCOUNT=strprimrosedatalake
+      - AZURE_STORAGE_KEY=${AZURE_STORAGE_KEY}
+      - UNITY_CATALOG_HOST=0.0.0.0
+      - UNITY_CATALOG_PORT=8080
+    volumes:
+      - unity_metadata:/app/metadata
+      - ./config/unity-catalog:/app/config
+    networks:
+      - lakehouse_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  duckdb:
+    image: duckdb/duckdb:latest
+    container_name: duckdb
+    ports:
+      - "8081:8081"  # DuckDB HTTP API
+    environment:
+      - UNITY_CATALOG_URL=http://unity-catalog:8080
+      - DUCKDB_HTTP_PORT=8081
+    depends_on:
+      unity-catalog:
+        condition: service_healthy
+    volumes:
+      - ./config/duckdb:/app/config
+    networks:
+      - lakehouse_network
+    command: ["duckdb", "--http", "--http-port", "8081"]
+
+  dbt-core:
+    image: ghcr.io/dbt-labs/dbt-core:latest
+    container_name: dbt-core
+    volumes:
+      - ./dbt:/dbt
+      - dbt_models:/dbt/models
+      - ./config/dbt:/dbt/config
+    environment:
+      - DUCKDB_DATABASE=:memory:
+      - UNITY_CATALOG_URL=http://unity-catalog:8080
+      - AZURE_STORAGE_ACCOUNT=strprimrosedatalake
+      - AZURE_STORAGE_KEY=${AZURE_STORAGE_KEY}
+    working_dir: /dbt
+    depends_on:
+      unity-catalog:
+        condition: service_healthy
+      duckdb:
+        condition: service_started
+    networks:
+      - lakehouse_network
+    command: tail -f /dev/null
+
+volumes:
+  unity_metadata:
+    driver: local
+  dbt_models:
+    driver: local
+
+networks:
+  lakehouse_network:
+    driver: bridge 

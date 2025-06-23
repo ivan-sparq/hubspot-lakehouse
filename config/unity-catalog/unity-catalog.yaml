@@ -1,0 +1,59 @@
+# Unity Catalog Configuration
+catalog:
+  name: hubspot_lakehouse
+  description: "HubSpot Communications Data Lakehouse"
+
+# Azure Storage Configuration
+storage:
+  type: azure
+  account: strprimrosedatalake
+  container: raw
+  authentication:
+    type: key
+    key: ${AZURE_STORAGE_KEY}
+
+# Schema Definitions
+schemas:
+  - name: raw
+    description: "Raw HubSpot communications data"
+    location: "hubspot/communications"
+
+  - name: silver
+    description: "Cleaned and validated communications data"
+    location: "silver/communications"
+
+  - name: gold
+    description: "Aggregated business insights"
+    location: "gold/communications"
+
+# Table Definitions for Raw Layer
+tables:
+  - name: raw.hubspot_communications
+    description: "Raw HubSpot communications data from JSON files"
+    format: json
+    location: "hubspot/communications"
+    schema:
+      - name: id
+        type: string
+        description: "Unique communication ID"
+      - name: properties
+        type: struct
+        description: "HubSpot properties object"
+      - name: createdAt
+        type: timestamp
+        description: "Record creation timestamp"
+      - name: updatedAt
+        type: timestamp
+        description: "Record last update timestamp"
+      - name: archived
+        type: boolean
+        description: "Whether the record is archived"
+
+# Partitioning Strategy
+partitioning:
+  strategy: date_hour
+  columns:
+    - year
+    - month
+    - day
+    - hour

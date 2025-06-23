@@ -1,0 +1,28 @@
+hubspot_lakehouse:
+  target: dev
+  outputs:
+    dev:
+      type: duckdb
+      path: ":memory:"
+      schema: main
+      threads: 4
+      extensions:
+        - httpfs
+        - json
+      settings:
+        httpfs_azure_storage_account: "{{ env_var('AZURE_STORAGE_ACCOUNT') }}"
+        httpfs_azure_storage_key: "{{ env_var('AZURE_STORAGE_KEY') }}"
+        unity_catalog_url: "{{ env_var('UNITY_CATALOG_URL') }}"
+
+    prod:
+      type: duckdb
+      path: "/dbt/data/hubspot_lakehouse.duckdb"
+      schema: main
+      threads: 8
+      extensions:
+        - httpfs
+        - json
+      settings:
+        httpfs_azure_storage_account: "{{ env_var('AZURE_STORAGE_ACCOUNT') }}"
+        httpfs_azure_storage_key: "{{ env_var('AZURE_STORAGE_KEY') }}"
+        unity_catalog_url: "{{ env_var('UNITY_CATALOG_URL') }}"

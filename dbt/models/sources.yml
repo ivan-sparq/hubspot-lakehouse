@@ -1,0 +1,21 @@
+version: 2
+
+sources:
+  - name: raw
+    description: "Raw data from Azure Storage via Unity Catalog"
+    tables:
+      - name: hubspot_communications
+        description: "Raw HubSpot communications data from JSON files"
+        columns:
+          - name: id
+            description: "Unique communication ID"
+            tests:
+              - not_null
+          - name: properties
+            description: "HubSpot properties object containing all communication details"
+          - name: createdAt
+            description: "Record creation timestamp"
+          - name: updatedAt
+            description: "Record last update timestamp"
+          - name: archived
+            description: "Whether the record is archived"
