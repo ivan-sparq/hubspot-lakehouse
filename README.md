@@ -1,12 +1,13 @@
 # HubSpot Lakehouse with Unity Catalog
 
-A modern data lakehouse solution for HubSpot communications data using Unity Catalog, DuckDB, and dbt.
+A modern data lakehouse solution for HubSpot communications data using Unity Catalog, DuckDB, and dbt with MinIO Azure Gateway.
 
 ## Architecture
 
 This solution provides a containerized data lakehouse with the following components:
 
-- **Unity Catalog**: Metadata management and Azure Storage connectivity
+- **Unity Catalog**: Metadata management and S3-compatible storage connectivity
+- **MinIO**: S3-compatible gateway to Azure Blob Storage (direct access, no sync needed)
 - **DuckDB**: High-performance analytical database (self-serve compute engine)
 - **dbt**: Data transformation and modeling
 - **Azure Storage**: Data storage for all layers (raw, silver, gold)
@@ -14,14 +15,23 @@ This solution provides a containerized data lakehouse with the following compone
 ## Data Flow
 
 ```
-Azure Storage (Raw JSON) → Unity Catalog → DuckDB → dbt → Silver/Gold Layers
+Azure Storage (ADLS) ←→ MinIO (S3 Gateway) ←→ Unity Catalog ←→ DuckDB → dbt → Silver/Gold Layers
 ```
+
+### Why MinIO Azure Gateway?
+
+Unity Catalog has better support for S3-compatible storage than Azure Data Lake Storage (ADLS). MinIO acts as an S3 gateway to Azure Blob Storage, providing:
+- **Direct Azure Storage access** - No data sync required
+- **Better Unity Catalog compatibility** - Native S3 protocol support
+- **Real-time data access** - Data stays in Azure, accessed via S3
+- **Unified access** - Single S3 endpoint for all storage operations
+- **Future-proof** - Easy migration to other S3-compatible storage
 
 ### Data Layers
 
-1. **Raw Layer**: `hubspot/communications/YYYYMMDD/HHMMSS.json`
+1. **Raw Layer**: `s3://raw/hubspot/communications/YYYYMMDD/HHMMSS.json`
    - Hourly JSON files from HubSpot
-   - Stored in Azure Storage container `raw`
+   - Directly accessed from Azure Storage via S3 gateway
 
 2. **Silver Layer**: Cleaned and validated communications data
    - Data quality checks
@@ -60,11 +70,9 @@ Azure Storage (Raw JSON) → Unity Catalog → DuckDB → dbt → Silver/Gold La
    docker-compose up -d
    ```
 
-4. **Initialize dbt project**
+4. **Test Azure gateway configuration**
    ```bash
-   docker exec -it dbt-core bash
-   dbt deps
-   dbt run
+   ./scripts/test-minio-azure-gateway.sh
    ```
 
 5. **Connect to DuckDB**
@@ -74,16 +82,22 @@ Azure Storage (Raw JSON) → Unity Catalog → DuckDB → dbt → Silver/Gold La
 
 ## Services
 
+### MinIO (Ports 9000, 9001)
+- **S3-compatible gateway to Azure Blob Storage**
+- Web console for data management
+- Direct access to Azure Storage containers
+- No data sync required
+
 ### Unity Catalog (Port 8080)
 - Metadata management
-- Azure Storage connectivity
+- S3 storage connectivity via MinIO
 - Schema and table definitions
 
 ### DuckDB (Port 8081)
 - **Self-serve analytical query engine**
 - Unity Catalog integration
 - HTTP API for external connections
-- **No local data storage** - all data accessed via Azure Storage
+- **No local data storage** - all data accessed via Azure Storage via S3
 - **Compute engine only** - perfect for cloud deployment
 
 ### dbt Core
@@ -105,36 +119,49 @@ Azure Storage (Raw JSON) → Unity Catalog → DuckDB → dbt → Silver/Gold La
    curl http://localhost:8081/health
    ```
 
-3. **Python/Jupyter Integration**
+3. **MinIO Console**
+   ```bash
+   http://localhost:9001
+   # Username: minioadmin
+   # Password: minioadmin123
+   ```
+
+4. **Python/Jupyter Integration**
    ```python
    import duckdb
    conn = duckdb.connect('http://localhost:8081')
    ```
 
-4. **Execute SQL files**
+5. **Execute SQL files**
    ```bash
    docker exec -i duckdb duckdb < examples/duckdb-queries.sql
    ```
 
-### Example Queries
+### Example Queries (Azure S3 Paths)
 
 ```sql
 -- Test Unity Catalog connection
 SELECT * FROM unity_catalog_test;
 
--- Query raw HubSpot data from Azure Storage
+-- Test S3/MinIO connection
+SELECT * FROM s3_test;
+
+-- Test Azure Storage access
+SELECT * FROM azure_storage_test;
+
+-- Query raw HubSpot data from Azure Storage via S3
 SELECT 
     id,
     properties['hs_engagement_type'] as engagement_type,
     properties['hs_createdate'] as created_date
-FROM read_json_auto('https://strprimrosedatalake.blob.core.windows.net/raw/hubspot/communications/20250531/140000.json')
+FROM read_json_auto('s3://raw/hubspot/communications/20250531/140000.json')
 LIMIT 10;
 
 -- Analyze communications by type
 SELECT 
     properties['hs_engagement_type'] as engagement_type,
     COUNT(*) as count
-FROM read_json_auto('https://strprimrosedatalake.blob.core.windows.net/raw/hubspot/communications/20250531/*.json')
+FROM read_json_auto('s3://raw/hubspot/communications/20250531/*.json')
 GROUP BY properties['hs_engagement_type'];
 ```
 
@@ -147,13 +174,13 @@ import pandas as pd
 # Connect to DuckDB
 conn = duckdb.connect('http://localhost:8081')
 
-# Query data
+# Query data from Azure Storage via S3
 df = conn.execute("""
     SELECT 
         id,
         properties['hs_engagement_type'] as engagement_type,
         properties['hs_createdate'] as created_date
-    FROM read_json_auto('https://strprimrosedatalake.blob.core.windows.net/raw/hubspot/communications/20250531/140000.json')
+    FROM read_json_auto('s3://raw/hubspot/communications/20250531/140000.json')
     LIMIT 10
 """).df()
 
@@ -175,14 +202,14 @@ print(df.head())
 
 ### Basic Data Exploration
 ```sql
--- Query raw communications
-SELECT * FROM raw.hubspot_communications LIMIT 10;
+-- Query raw communications from Azure Storage
+SELECT * FROM read_json_auto('s3://raw/hubspot/communications/20250531/*.json') LIMIT 10;
 
 -- Query silver layer
 SELECT 
     communication_type,
     count(*) as count
-FROM silver.silver_hubspot_communications 
+FROM read_parquet('s3://silver/silver_hubspot_communications.parquet')
 GROUP BY communication_type;
 
 -- Query gold layer summaries
@@ -191,7 +218,7 @@ SELECT
     total_communications,
     total_meetings,
     meeting_completion_rate
-FROM gold.gold_communications_summary 
+FROM read_parquet('s3://gold/gold_communications_summary.parquet')
 WHERE granularity = 'daily'
 ORDER BY time_period DESC;
 ```
@@ -227,18 +254,23 @@ This solution is designed for easy cloud deployment:
 - Use the same docker-compose configuration
 - Scale DuckDB instances as needed
 - No persistent storage required (compute-only)
+- MinIO gateway provides S3 access to Azure Storage
 
 ### Azure Kubernetes Service
 - Deploy as Kubernetes pods
 - Auto-scaling based on demand
 - Load balancing for multiple DuckDB instances
+- MinIO can be deployed as a StatefulSet
 
-### Benefits of Self-Serve DuckDB
+### Benefits of Self-Serve DuckDB with MinIO Azure Gateway
 - **No data storage costs** - all data in Azure Storage
 - **Pay-per-use compute** - scale up/down as needed
 - **Unified governance** - all access through Unity Catalog
-- **Multi-format support** - JSON, Parquet, Delta, etc.
+- **S3 compatibility** - works with any S3-compatible storage
 - **High performance** - columnar storage and vectorized execution
+- **Better Unity Catalog support** - native S3 protocol
+- **Direct Azure access** - no data sync required
+- **Real-time data** - always up-to-date from Azure Storage
 
 ## Contributing
 

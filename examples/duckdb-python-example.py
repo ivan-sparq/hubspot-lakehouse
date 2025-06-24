@@ -1,6 +1,7 @@
 """
 DuckDB Python Integration Example
 This script demonstrates how to connect to DuckDB from Python/Jupyter
+Configured for MinIO Azure Gateway (S3-compatible access to Azure Blob Storage)
 """
 
 import duckdb
@@ -29,6 +30,14 @@ def test_connection(conn):
         result = conn.execute("SELECT * FROM unity_catalog_test").fetchone()
         print(f"Unity Catalog: {result[0]}")
 
+        # Test S3/MinIO connection
+        result = conn.execute("SELECT * FROM s3_test").fetchone()
+        print(f"S3/MinIO: {result[0]}")
+
+        # Test Azure Storage access
+        result = conn.execute("SELECT * FROM azure_storage_test").fetchone()
+        print(f"Azure Storage: {result[0]}")
+
         return True
     except Exception as e:
         print(f"❌ Connection test failed: {e}")
@@ -36,9 +45,9 @@ def test_connection(conn):
 
 
 def query_hubspot_data(conn):
-    """Query HubSpot communications data"""
+    """Query HubSpot communications data from Azure Storage via S3"""
     try:
-        # Query raw JSON data from Azure Storage
+        # Query raw JSON data from Azure Storage via S3
         query = """
         SELECT 
             id,
@@ -46,7 +55,7 @@ def query_hubspot_data(conn):
             properties['hs_createdate'] as created_date,
             properties['hs_body_preview'] as body_preview,
             properties['hubspot_owner_id'] as owner_id
-        FROM read_json_auto('https://strprimrosedatalake.blob.core.windows.net/raw/hubspot/communications/20250531/140000.json')
+        FROM read_json_auto('s3://raw/hubspot/communications/20250531/140000.json')
         LIMIT 10
         """
 
@@ -69,7 +78,7 @@ def analyze_communications(conn):
             COUNT(*) as count,
             MIN(properties['hs_createdate']) as earliest_date,
             MAX(properties['hs_createdate']) as latest_date
-        FROM read_json_auto('https://strprimrosedatalake.blob.core.windows.net/raw/hubspot/communications/20250531/*.json')
+        FROM read_json_auto('s3://raw/hubspot/communications/20250531/*.json')
         WHERE properties['hs_engagement_type'] IS NOT NULL
         GROUP BY properties['hs_engagement_type']
         ORDER BY count DESC
@@ -103,7 +112,7 @@ def create_views(conn):
             properties['hs_meeting_outcome'] as meeting_outcome,
             archived,
             _filename
-        FROM read_json_auto('https://strprimrosedatalake.blob.core.windows.net/raw/hubspot/communications/*/*.json')
+        FROM read_json_auto('s3://raw/hubspot/communications/*/*.json')
         """
 
         conn.execute(view_query)
@@ -121,7 +130,7 @@ def create_views(conn):
 
 
 def export_data(conn, format="parquet"):
-    """Export query results"""
+    """Export query results to Azure Storage via S3"""
     try:
         query = """
         SELECT 
@@ -129,29 +138,51 @@ def export_data(conn, format="parquet"):
             properties['hs_engagement_type'] as engagement_type,
             properties['hs_createdate'] as created_date,
             properties['hs_body_preview'] as body_preview
-        FROM read_json_auto('https://strprimrosedatalake.blob.core.windows.net/raw/hubspot/communications/20250531/*.json')
+        FROM read_json_auto('s3://raw/hubspot/communications/20250531/*.json')
         WHERE properties['hs_engagement_type'] IS NOT NULL
         """
 
         if format == "parquet":
             conn.execute(
-                f"COPY ({query}) TO 'communications_export.parquet' (FORMAT PARQUET)"
+                f"COPY ({query}) TO 's3://silver/communications_export.parquet' (FORMAT PARQUET)"
             )
         elif format == "csv":
             conn.execute(
-                f"COPY ({query}) TO 'communications_export.csv' (FORMAT CSV, HEADER)"
+                f"COPY ({query}) TO 's3://silver/communications_export.csv' (FORMAT CSV, HEADER)"
             )
 
-        print(f"✅ Exported data to communications_export.{format}")
+        print(f"✅ Exported data to s3://silver/communications_export.{format}")
 
     except Exception as e:
         print(f"❌ Failed to export data: {e}")
 
 
+def list_azure_containers(conn):
+    """List Azure Storage containers via S3"""
+    try:
+        query = """
+        SELECT 
+            name,
+            size,
+            last_modified
+        FROM read_parquet('s3://raw/hubspot/communications/*.parquet')
+        LIMIT 10
+        """
+
+        df = conn.execute(query).df()
+        print("📁 Azure Storage Files (via S3):")
+        print(df)
+        return df
+
+    except Exception as e:
+        print(f"❌ Failed to list Azure files: {e}")
+        return None
+
+
 def main():
     """Main function to demonstrate DuckDB usage"""
-    print("🦆 DuckDB Python Integration Demo")
-    print("=" * 40)
+    print("🦆 DuckDB Python Integration Demo (Azure S3 Gateway)")
+    print("=" * 55)
 
     # Connect to DuckDB
     conn = connect_to_duckdb()
@@ -162,22 +193,27 @@ def main():
     if not test_connection(conn):
         return
 
-    print("\n" + "=" * 40)
+    print("\n" + "=" * 55)
+
+    # List Azure containers
+    list_azure_containers(conn)
+
+    print("\n" + "=" * 55)
 
     # Query HubSpot data
     df = query_hubspot_data(conn)
 
-    print("\n" + "=" * 40)
+    print("\n" + "=" * 55)
 
     # Analyze communications
     analysis_df = analyze_communications(conn)
 
-    print("\n" + "=" * 40)
+    print("\n" + "=" * 55)
 
     # Create views
     create_views(conn)
 
-    print("\n" + "=" * 40)
+    print("\n" + "=" * 55)
 
     # Export data
     export_data(conn, "parquet")
