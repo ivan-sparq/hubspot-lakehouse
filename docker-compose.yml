@@ -18,63 +18,67 @@ services:
         target: /opt/unitycatalog/etc/data
     networks:
       - lakehouse_network
-    # healthcheck:
-    #   test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
-    #   interval: 30s
-    #   timeout: 10s
-    #   retries: 3
-    # command: ["tail", "-f", "/dev/null"]  # Placeholder command
-  
-  # unity-catalog-ui:
-  #   build:
-  #     context: ui/
-  #     dockerfile: Dockerfile
-  #   ports:
-  #     - "3000:3000"
-  #   depends_on:
-  #     - unity-catalog-server
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
   duckdb:
-    image: datacatering/duckdb:v1.3.0
-    platform: linux/amd64  # Force x86_64 platform for compatibility
+    image: duckdb/duckdb:latest
+    platform: linux/amd64
     container_name: duckdb
     ports:
       - "8081:8081"  # DuckDB HTTP API
+      - "8082:8082"  # DuckDB Web UI (if available)
     environment:
       - UNITY_CATALOG_URL=http://unity-catalog:8080
+      - AZURE_STORAGE_ACCOUNT=${AZURE_STORAGE_ACCOUNT}
+      - AZURE_STORAGE_KEY=${AZURE_STORAGE_KEY}
       - DUCKDB_HTTP_PORT=8081
+      - DUCKDB_WEB_PORT=8082
     depends_on:
       unity-catalog:
         condition: service_healthy
     volumes:
       - ./config/duckdb:/app/config
+      - ./scripts/init-duckdb.sql:/docker-entrypoint-initdb.d/init.sql:ro
     networks:
       - lakehouse_network
-    command: ["duckdb", "--http", "--http-port", "8081"]
+    command: >
+      sh -c "
+        echo 'Installing extensions...' &&
+        duckdb --http --http-port 8081 --http-host 0.0.0.0 &&
+        echo 'DuckDB HTTP server started on port 8081'
+      "
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8081/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
-  dbt:
-    # Using the official dbt-core image with a specific version
-    image: ghcr.io/dbt-labs/dbt-core:1.7.0
-    platform: linux/amd64  # Force x86_64 platform for compatibility
-    container_name: dbt-core
-    volumes:
-      - ./dbt:/dbt
-      - dbt_models:/dbt/models
-      - ./config/dbt:/dbt/config
-    environment:
-      - "DUCKDB_DATABASE=:memory:"
-      - UNITY_CATALOG_URL=http://unity-catalog:8080
-      - AZURE_STORAGE_ACCOUNT=${AZURE_STORAGE_ACCOUNT}
-      - AZURE_STORAGE_KEY=${AZURE_STORAGE_KEY}
-    working_dir: /dbt
-    depends_on:
-      unity-catalog:
-        condition: service_healthy
-      duckdb:
-        condition: service_started
-    networks:
-      - lakehouse_network
-    command: tail -f /dev/null
+  # dbt-core:
+  #   image: ghcr.io/dbt-labs/dbt-core:latest
+  #   platform: linux/amd64
+  #   container_name: dbt-core
+  #   volumes:
+  #     - ./dbt:/dbt
+  #     - dbt_models:/dbt/models
+  #     - ./config/dbt:/dbt/config
+  #   environment:
+  #     - DUCKDB_DATABASE=:memory:
+  #     - UNITY_CATALOG_URL=http://unity-catalog:8080
+  #     - AZURE_STORAGE_ACCOUNT=${AZURE_STORAGE_ACCOUNT}
+  #     - AZURE_STORAGE_KEY=${AZURE_STORAGE_KEY}
+  #   working_dir: /dbt
+  #   depends_on:
+  #     unity-catalog:
+  #       condition: service_healthy
+  #     duckdb:
+  #       condition: service_healthy
+  #   networks:
+  #     - lakehouse_network
+  #   command: tail -f /dev/null
 
 volumes:
   unitycatalog_data:

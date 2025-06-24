@@ -1,5 +1,3 @@
-
-
 # HubSpot Lakehouse with Unity Catalog
 
 A modern data lakehouse solution for HubSpot communications data using Unity Catalog, DuckDB, and dbt.
@@ -9,7 +7,7 @@ A modern data lakehouse solution for HubSpot communications data using Unity Cat
 This solution provides a containerized data lakehouse with the following components:
 
 - **Unity Catalog**: Metadata management and Azure Storage connectivity
-- **DuckDB**: High-performance analytical database
+- **DuckDB**: High-performance analytical database (self-serve compute engine)
 - **dbt**: Data transformation and modeling
 - **Azure Storage**: Data storage for all layers (raw, silver, gold)
 
@@ -69,10 +67,9 @@ Azure Storage (Raw JSON) → Unity Catalog → DuckDB → dbt → Silver/Gold La
    dbt run
    ```
 
-5. **Query data with DuckDB**
+5. **Connect to DuckDB**
    ```bash
-   docker exec -it duckdb duckdb
-   # Connect to Unity Catalog and query data
+   ./scripts/connect-duckdb.sh
    ```
 
 ## Services
@@ -83,14 +80,85 @@ Azure Storage (Raw JSON) → Unity Catalog → DuckDB → dbt → Silver/Gold La
 - Schema and table definitions
 
 ### DuckDB (Port 8081)
-- Analytical query engine
+- **Self-serve analytical query engine**
 - Unity Catalog integration
 - HTTP API for external connections
+- **No local data storage** - all data accessed via Azure Storage
+- **Compute engine only** - perfect for cloud deployment
 
 ### dbt Core
 - Data transformation pipeline
 - Model development
 - Data quality testing
+
+## DuckDB Self-Serve Usage
+
+### Connection Methods
+
+1. **Interactive CLI**
+   ```bash
+   docker exec -it duckdb duckdb
+   ```
+
+2. **HTTP API (for applications)**
+   ```bash
+   curl http://localhost:8081/health
+   ```
+
+3. **Python/Jupyter Integration**
+   ```python
+   import duckdb
+   conn = duckdb.connect('http://localhost:8081')
+   ```
+
+4. **Execute SQL files**
+   ```bash
+   docker exec -i duckdb duckdb < examples/duckdb-queries.sql
+   ```
+
+### Example Queries
+
+```sql
+-- Test Unity Catalog connection
+SELECT * FROM unity_catalog_test;
+
+-- Query raw HubSpot data from Azure Storage
+SELECT 
+    id,
+    properties['hs_engagement_type'] as engagement_type,
+    properties['hs_createdate'] as created_date
+FROM read_json_auto('https://strprimrosedatalake.blob.core.windows.net/raw/hubspot/communications/20250531/140000.json')
+LIMIT 10;
+
+-- Analyze communications by type
+SELECT 
+    properties['hs_engagement_type'] as engagement_type,
+    COUNT(*) as count
+FROM read_json_auto('https://strprimrosedatalake.blob.core.windows.net/raw/hubspot/communications/20250531/*.json')
+GROUP BY properties['hs_engagement_type'];
+```
+
+### Python Integration Example
+
+```python
+import duckdb
+import pandas as pd
+
+# Connect to DuckDB
+conn = duckdb.connect('http://localhost:8081')
+
+# Query data
+df = conn.execute("""
+    SELECT 
+        id,
+        properties['hs_engagement_type'] as engagement_type,
+        properties['hs_createdate'] as created_date
+    FROM read_json_auto('https://strprimrosedatalake.blob.core.windows.net/raw/hubspot/communications/20250531/140000.json')
+    LIMIT 10
+""").df()
+
+print(df.head())
+```
 
 ## Data Models
 
@@ -151,9 +219,26 @@ dbt docs generate
 dbt docs serve
 ```
 
-## Deployment
+## Cloud Deployment
 
-This solution is designed to be easily deployable to Azure Container Instances or Azure Kubernetes Service. The same container images and configurations can be used in the cloud with minimal changes.
+This solution is designed for easy cloud deployment:
+
+### Azure Container Instances
+- Use the same docker-compose configuration
+- Scale DuckDB instances as needed
+- No persistent storage required (compute-only)
+
+### Azure Kubernetes Service
+- Deploy as Kubernetes pods
+- Auto-scaling based on demand
+- Load balancing for multiple DuckDB instances
+
+### Benefits of Self-Serve DuckDB
+- **No data storage costs** - all data in Azure Storage
+- **Pay-per-use compute** - scale up/down as needed
+- **Unified governance** - all access through Unity Catalog
+- **Multi-format support** - JSON, Parquet, Delta, etc.
+- **High performance** - columnar storage and vectorized execution
 
 ## Contributing
 
