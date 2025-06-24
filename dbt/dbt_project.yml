@@ -1,11 +1,15 @@
+# Name your project! Project names should contain only lowercase characters
+# and underscores. A good package name should reflect your organization's
+# name or the intended use of these models
 name: "hubspot_lakehouse"
 version: "1.0.0"
-config-version: 2
 
 # This setting configures which "profile" dbt uses for this project.
 profile: "hubspot_lakehouse"
 
 # These configurations specify where dbt should look for different types of files.
+# The `model-paths` config, for example, states that models in this project can be
+# found in the "models/" directory. You probably won't need to change these!
 model-paths: ["models"]
 analysis-paths: ["analyses"]
 test-paths: ["tests"]
@@ -13,31 +17,11 @@ seed-paths: ["seeds"]
 macro-paths: ["macros"]
 snapshot-paths: ["snapshots"]
 
-clean-targets:
+clean-targets: # directories to be removed by `dbt clean`
   - "target"
   - "dbt_packages"
 
-# Configuring models
 models:
   hubspot_lakehouse:
-    # Config indicated by + and applies to all files under models/example/
-    silver:
+    raw:
       +materialized: table
-      +schema: silver
-    gold:
-      +materialized: table
-      +schema: gold
-    staging:
-      +materialized: view
-      +schema: staging
-
-# Variables
-vars:
-  # Unity Catalog configuration
-  unity_catalog_url: "{{ env_var('UNITY_CATALOG_URL') }}"
-  azure_storage_account: "{{ env_var('AZURE_STORAGE_ACCOUNT') }}"
-
-  # HubSpot specific variables
-  hubspot_raw_schema: "raw"
-  hubspot_silver_schema: "silver"
-  hubspot_gold_schema: "gold"

@@ -1,306 +1,216 @@
-# HubSpot Lakehouse POC
+# HubSpot Lakehouse
 
-A proof-of-concept data lakehouse solution using **Unity Catalog**, **DuckDB**, and **dbt core** to process HubSpot communications data. This solution uses **MinIO** as a standalone object storage server with **Object Lifecycle Management (ILM)** to automatically transition data to Azure Storage for cost optimization.
+A modern data lakehouse solution for HubSpot data using DuckDB, dbt, and Azure Blob Storage.
 
-## Architecture
+## 🏗️ Architecture
 
-```
-Azure Storage (ADLS) ←→ MinIO (Standalone + ILM) ←→ Unity Catalog ←→ DuckDB → dbt
-```
+This project implements a medallion architecture:
+- **Raw Layer**: Direct ingestion from HubSpot APIs to Azure Blob Storage
+- **Bronze Layer**: Flattened and cleaned data using dbt
+- **Silver Layer**: Business logic and transformations
+- **Gold Layer**: Aggregated and curated data for analytics
 
-### Key Components
+## 🚀 Quick Start
 
-- **MinIO**: Standalone object storage server with ILM for automatic Azure transitions
-- **Unity Catalog**: Open-source metadata catalog for data governance
-- **DuckDB**: In-process analytical database for fast queries
-- **dbt**: Data transformation and modeling
-- **Azure Storage**: Long-term data storage with automatic transitions
+### Prerequisites
 
-### Data Flow
+- Python 3.12+
+- Azure Storage Account with Blob Storage
+- HubSpot API access
 
-1. **Raw Data**: HubSpot communications data stored in Azure Storage
-2. **Initial Sync**: Data synced to MinIO for local processing
-3. **Processing**: Unity Catalog + DuckDB + dbt transform data through silver → gold layers
-4. **ILM Transitions**: MinIO automatically transitions objects to Azure based on lifecycle rules
-5. **Cost Optimization**: Recent data stays local for performance, older data moves to Azure
-
-## Prerequisites
-
-- Docker and Docker Compose
-- Azure Storage account with HubSpot data
-- Python 3.8+ (for local development)
-
-## Quick Start
-
-### 1. Environment Setup
+### 1. Install Dependencies
 
 ```bash
-# Copy environment template
-cp env.example .env
-
-# Edit .env with your Azure Storage credentials
-AZURE_STORAGE_ACCOUNT=your-storage-account
-AZURE_STORAGE_KEY=your-storage-key
+uv sync
+source .venv/bin/activate
 ```
 
-### 2. Start Services
+### 2. Set Up DuckDB Locally
+
+#### Install DuckDB
+
+**macOS (using Homebrew):**
+```bash
+brew install duckdb
+```
+
+
+
+#### Verify Installation
+```bash
+duckdb --version
+```
+
+### 3. Configure Azure Authentication
+
+
+####  Azure CLI Authentication (Development)
 
 ```bash
-# Start MinIO standalone server
-docker-compose up -d minio
+# Login with Azure CLI
+az login
 
-# Setup MinIO with Azure ILM
-./scripts/setup-minio-azure-ilm.sh
-
-# Sync initial data from Azure to MinIO
-./scripts/sync-azure-to-minio-initial.sh
-
-# Start Unity Catalog and DuckDB
-docker-compose up -d unity-catalog duckdb
+# Set subscription
+az account set --subscription "195658e6-d263-4cc9-9049-a6909ca5b2f6"
 ```
 
-### 3. Verify Setup
+### 4. Configure DuckDB for Azure
+
+#### Install Required Extensions
+
+Connect to DuckDB and install extensions:
+
+
+#### Connect to DuckDB
+```bash
+duckdb dev.db
+```
+#### Install required extensions
+```sql
+
+INSTALL azure;
+INSTALL httpfs;
+LOAD azure;
+LOAD httpfs;
+```
+
+#### Configure Azure Authentication
+```sql
+CREATE SECRET IF NOT EXISTS azure_creds (
+    TYPE azure,
+    PROVIDER credential_chain,
+    SCOPE 'az://strprimrosedatalake.blob.core.windows.net/'
+);
+```
+
+### 5. Configure dbt
 
 ```bash
-# Check service status
-docker-compose ps
-
-# Test DuckDB connection
-./scripts/connect-duckdb.sh
-
-# Run example queries
-docker exec -i duckdb duckdb < examples/duckdb-queries.sql
+dbt deps
 ```
 
-## Configuration
+### 6. Test Configuration
 
-### MinIO ILM Rules
-
-The setup configures automatic transitions to Azure Storage:
-
-- **Raw data**: Transitions to Azure after 7 days
-- **Silver data**: Transitions to Azure after 3 days  
-- **Gold data**: Transitions to Azure after 1 day
-
-### Data Paths
-
-```
-s3://raw/hubspot/communications/YYYYMMDD/HHMMSS.json
-s3://silver/ (processed data)
-s3://gold/ (aggregated insights)
-```
-
-## Usage
-
-### DuckDB Queries
+#### Test Azure Connection
 
 ```sql
--- Test connections
-SELECT * FROM unity_catalog_test;
-SELECT * FROM s3_test;
-SELECT * FROM azure_storage_test;
-
--- Query HubSpot data
-SELECT * FROM read_json_auto('s3://raw/hubspot/communications/20250531/140000.json');
-
--- Process data through layers
-SELECT 
-    communication_id,
-    contact_id,
-    channel_type,
-    created_at,
-    status
-FROM read_json_auto('s3://raw/hubspot/communications/*.json')
-WHERE created_at >= '2025-05-31';
+-- Test reading from Azure Blob Storage
+SELECT * FROM read_json('az://your-container/path/to/file.json') LIMIT 5;
 ```
 
-### Python Integration
-
-```python
-import duckdb
-
-# Connect to DuckDB
-conn = duckdb.connect('http://localhost:8081')
-
-# Query data
-df = conn.execute("""
-    SELECT * FROM read_json_auto('s3://raw/hubspot/communications/*.json')
-    LIMIT 10
-""").df()
-
-print(df)
-```
-
-### dbt Models
+#### Test dbt
 
 ```bash
-# Navigate to dbt project
-cd dbt
+# Test dbt connection
+dbt debug
 
-# Run dbt models
-dbt run --profiles-dir config/dbt
+# Run a simple model
+dbt run --select raw_hubspot_communications
+```
 
+## 📁 Project Structure
+
+```
+hubspot-lakehouse/
+├── dbt/
+│   ├── models/
+│   │   ├── raw/           # Raw data models
+│   │   ├── bronze/        # Flattened and cleaned data
+│   │   ├── silver/        # Business logic transformations
+│   │   └── gold/          # Aggregated data
+│   ├── sources.yml        # Source definitions
+│   └── profiles.yml       # dbt profile configuration
+├── config/
+│   ├── duckdb/           # DuckDB configuration
+│   └── unity-catalog/    # Unity Catalog configuration
+├── docs/                 # Documentation
+├── examples/             # Example notebooks and scripts
+└── tests/                # Test files
+```
+
+## 🔧 Development
+
+### Running dbt Models
+
+```bash
+# Run all models
+dbt run
+
+# Run specific model
+dbt run --select bronze_hubspot_communications
+
+# Run models with dependencies
+dbt run --select +bronze_hubspot_communications
+
+# Run models in a specific folder
+dbt run --select raw/*
+```
+
+### Testing
+
+```bash
+# Run all tests
+dbt test
+
+# Run specific test
+dbt test --select test_name
+```
+
+### Documentation
+
+```bash
 # Generate documentation
 dbt docs generate
+
+# Serve documentation
+dbt docs serve
 ```
 
-## Services
-
-| Service | URL | Credentials |
-|---------|-----|-------------|
-| MinIO Console | http://localhost:9001 | minioadmin / minioadmin123 |
-| MinIO API | http://localhost:9000 | minioadmin / minioadmin123 |
-| Unity Catalog | http://localhost:8080 | - |
-| DuckDB HTTP | http://localhost:8081 | - |
-
-## Data Model
-
-### Staging Layer (`dbt/models/staging/`)
-
-Raw data ingestion and basic cleaning:
-
-```sql
--- stg_hubspot_communications.sql
-SELECT 
-    communication_id,
-    contact_id,
-    channel_type,
-    created_at,
-    status,
-    metadata
-FROM {{ source('raw', 'hubspot_communications') }}
-```
-
-### Silver Layer (`dbt/models/silver/`)
-
-Cleaned and validated data:
-
-```sql
--- silver_communications.sql
-SELECT 
-    communication_id,
-    contact_id,
-    channel_type,
-    created_at,
-    status,
-    CASE 
-        WHEN status = 'SENT' THEN 'SUCCESS'
-        WHEN status = 'FAILED' THEN 'FAILED'
-        ELSE 'PENDING'
-    END as delivery_status
-FROM {{ ref('stg_hubspot_communications') }}
-WHERE created_at IS NOT NULL
-```
-
-### Gold Layer (`dbt/models/gold/`)
-
-Business insights and aggregations:
-
-```sql
--- gold_daily_communications_summary.sql
-SELECT 
-    DATE(created_at) as date,
-    channel_type,
-    delivery_status,
-    COUNT(*) as total_communications,
-    COUNT(CASE WHEN delivery_status = 'SUCCESS' THEN 1 END) as successful_communications
-FROM {{ ref('silver_communications') }}
-GROUP BY 1, 2, 3
-```
-
-## Development
-
-### Adding New Data Sources
-
-1. Add source configuration in `dbt/models/staging/_sources.yml`
-2. Create staging model in `dbt/models/staging/`
-3. Create silver model in `dbt/models/silver/`
-4. Create gold model in `dbt/models/gold/`
-
-### MinIO Management
+### Debugging
 
 ```bash
-# Access MinIO console
-open http://localhost:9001
+# Debug dbt configuration
+dbt debug
 
-# List buckets
-docker exec minio mc ls myminio
+# Show model lineage
+dbt ls --select +model_name
 
-# Upload files
-docker exec minio mc cp local-file.json myminio/raw/
-
-# Check ILM rules
-docker exec minio mc ilm rule ls myminio/raw --transition
+# Show model SQL
+dbt compile --select model_name
 ```
 
-### Unity Catalog Integration
+## 🔐 Security Best Practices
 
-Unity Catalog provides metadata management and governance:
+1. **Use Service Principals** for production environments
+2. **Rotate Access Keys** regularly
+3. **Use Managed Identities** when possible
+4. **Store Secrets** in Azure Key Vault
+5. **Limit Permissions** to minimum required access
 
-- **Data Discovery**: Browse and search datasets
-- **Lineage Tracking**: Understand data dependencies
-- **Access Control**: Manage permissions and policies
-- **Data Quality**: Monitor and validate data
-
-## Troubleshooting
+## 🐛 Troubleshooting
 
 ### Common Issues
 
-1. **MinIO not starting**: Check Docker logs with `docker-compose logs minio`
-2. **Azure connection issues**: Verify credentials in `.env` file
-3. **DuckDB connection errors**: Ensure MinIO is running first
-4. **ILM not working**: Check MinIO logs and verify Azure credentials
+1. **Azure Authentication Errors:**
+   - Verify service principal permissions
+   - Check environment variables
+   - Ensure storage account access
 
-### Logs
+2. **DuckDB Extension Issues:**
+   - Reinstall extensions: `INSTALL azure; LOAD azure;`
+   - Check DuckDB version compatibility
 
-```bash
-# View all logs
-docker-compose logs
+3. **dbt Connection Issues:**
+   - Run `dbt debug` to diagnose
+   - Check `profiles.yml` configuration
+   - Verify Azure credentials
 
-# View specific service logs
-docker-compose logs minio
-docker-compose logs unity-catalog
-docker-compose logs duckdb
-```
+### Getting Help
 
-## Production Considerations
+- Check [DuckDB Azure documentation](https://duckdb.org/docs/extensions/azure)
+- Review [dbt DuckDB adapter docs](https://github.com/jwills/dbt-duckdb)
+- Open an issue in this repository
 
-### Security
+## 📄 License
 
-- Use Azure Managed Identity instead of storage keys
-- Enable TLS for all connections
-- Implement proper access controls
-- Use Azure Key Vault for secrets management
-
-### Performance
-
-- Configure MinIO with appropriate resources
-- Use DuckDB's parallel processing capabilities
-- Optimize dbt models for incremental processing
-- Monitor ILM transition performance
-
-### Monitoring
-
-- Set up health checks for all services
-- Monitor Azure Storage costs
-- Track data processing metrics
-- Implement alerting for failures
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Test thoroughly
-5. Submit a pull request
-
-## License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## References
-
-- [MinIO Object Lifecycle Management](https://min.io/docs/minio/linux/administration/object-management/transition-objects-to-azure.html)
-- [Unity Catalog Documentation](https://docs.databricks.com/data-governance/unity-catalog/index.html)
-- [DuckDB Documentation](https://duckdb.org/docs/)
-- [dbt Documentation](https://docs.getdbt.com/)
+This project is licensed under the MIT License - see the LICENSE file for details.
