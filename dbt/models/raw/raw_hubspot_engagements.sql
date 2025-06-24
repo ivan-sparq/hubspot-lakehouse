@@ -6,10 +6,10 @@
 }}
 
 SELECT
-  id,
-  properties,
-  createdAt,
-  updatedAt,
-  archived,
+  engagement,
+  associations,
+  attachments,
+  scheduledTasks,
+  metadata,
   filename
 FROM {{ source('hubspot', 'engagements') }}

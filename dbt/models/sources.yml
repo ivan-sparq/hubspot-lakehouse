@@ -87,22 +87,21 @@ sources:
       - name: engagements
         description: "HubSpot engagements data from JSON files"
         config:
-          external_location: "az://strprimrosedatalake.blob.core.windows.net/raw/hubspot/engagements/**/*.json"
-        columns:
-          - name: id
-            description: "Unique identifier for the engagement"
-            tests:
-              - not_null
-          - name: properties
-            description: "JSON object containing all HubSpot properties"
-          - name: createdAt
-            description: "Timestamp when the record was created"
-          - name: updatedAt
-            description: "Timestamp when the record was last updated"
-          - name: archived
-            description: "Whether the record is archived"
-          - name: filename
-            description: "Source filename"
+          external_location: "read_json('az://strprimrosedatalake.blob.core.windows.net/raw/hubspot/engagements/**/*.json', maximum_depth=1, records=true)"
+          #  columns = {engagement: 'JSON', associations: 'JSON', attachments: 'JSON[]', scheduledTasks: 'JSON[]', metadata: 'JSON'}
+          columns:
+            - name: engagement
+              description: "Main engagement object with all engagement details"
+            - name: associations
+              description: "Associated contact, company, deal IDs, etc."
+            - name: attachments
+              description: "Any file attachments"
+            - name: scheduledTasks
+              description: "Scheduled tasks related to the engagement"
+            - name: metadata
+              description: "Additional metadata like meeting details, location, etc."
+            - name: filename
+              description: "Source filename"
 
       - name: users
         description: "HubSpot users data from JSON files"
