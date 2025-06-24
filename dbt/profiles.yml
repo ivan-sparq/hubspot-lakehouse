@@ -2,12 +2,12 @@ hubspot_lakehouse:
   outputs:
     dev:
       type: duckdb
-      path: dev.db
+      path: ../dev.db
       threads: 1
       extensions:
         - azure
         - httpfs
-      settings:
-        secret_directory: ~/.duckdb/stored_secrets
+      # settings:
+      #   secret_directory: ~/.duckdb/stored_secrets
 
   target: dev
