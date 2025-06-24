@@ -13,4 +13,4 @@ SELECT
     updatedAt,
     archived,
     filename,
-FROM {{ ref('ext_hubspot_communications') }}
+FROM {{ ref('raw_hubspot_communications') }}

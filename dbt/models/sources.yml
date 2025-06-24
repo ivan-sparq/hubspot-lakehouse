@@ -1,0 +1,125 @@
+version: 2
+
+sources:
+  - name: hubspot
+    description: "HubSpot data from Azure Blob Storage"
+    tables:
+      - name: communications
+        description: "HubSpot communications data from JSON files"
+        config:
+          external_location: "az://strprimrosedatalake.blob.core.windows.net/raw/hubspot/communications/**/*.json"
+        columns:
+          - name: id
+            description: "Unique identifier for the communication"
+            tests:
+              - not_null
+          - name: properties
+            description: "JSON object containing all HubSpot properties"
+          - name: createdAt
+            description: "Timestamp when the record was created"
+          - name: updatedAt
+            description: "Timestamp when the record was last updated"
+          - name: archived
+            description: "Whether the record is archived"
+          - name: filename
+            description: "Source filename"
+
+      - name: companies
+        description: "HubSpot companies data from JSON files"
+        config:
+          external_location: "az://strprimrosedatalake.blob.core.windows.net/raw/hubspot/companies/**/*.json"
+        columns:
+          - name: id
+            description: "Unique identifier for the company"
+            tests:
+              - not_null
+          - name: properties
+            description: "JSON object containing all HubSpot properties"
+          - name: createdAt
+            description: "Timestamp when the record was created"
+          - name: updatedAt
+            description: "Timestamp when the record was last updated"
+          - name: archived
+            description: "Whether the record is archived"
+          - name: filename
+            description: "Source filename"
+
+      - name: contacts
+        description: "HubSpot contacts data from JSON files"
+        config:
+          external_location: "az://strprimrosedatalake.blob.core.windows.net/raw/hubspot/contacts/**/*.json"
+        columns:
+          - name: id
+            description: "Unique identifier for the contact"
+            tests:
+              - not_null
+          - name: properties
+            description: "JSON object containing all HubSpot properties"
+          - name: createdAt
+            description: "Timestamp when the record was created"
+          - name: updatedAt
+            description: "Timestamp when the record was last updated"
+          - name: archived
+            description: "Whether the record is archived"
+          - name: filename
+            description: "Source filename"
+
+      - name: deals
+        description: "HubSpot deals data from JSON files"
+        config:
+          external_location: "az://strprimrosedatalake.blob.core.windows.net/raw/hubspot/deals/**/*.json"
+        columns:
+          - name: id
+            description: "Unique identifier for the deal"
+            tests:
+              - not_null
+          - name: properties
+            description: "JSON object containing all HubSpot properties"
+          - name: createdAt
+            description: "Timestamp when the record was created"
+          - name: updatedAt
+            description: "Timestamp when the record was last updated"
+          - name: archived
+            description: "Whether the record is archived"
+          - name: filename
+            description: "Source filename"
+
+      - name: engagements
+        description: "HubSpot engagements data from JSON files"
+        config:
+          external_location: "az://strprimrosedatalake.blob.core.windows.net/raw/hubspot/engagements/**/*.json"
+        columns:
+          - name: id
+            description: "Unique identifier for the engagement"
+            tests:
+              - not_null
+          - name: properties
+            description: "JSON object containing all HubSpot properties"
+          - name: createdAt
+            description: "Timestamp when the record was created"
+          - name: updatedAt
+            description: "Timestamp when the record was last updated"
+          - name: archived
+            description: "Whether the record is archived"
+          - name: filename
+            description: "Source filename"
+
+      - name: users
+        description: "HubSpot users data from JSON files"
+        config:
+          external_location: "az://strprimrosedatalake.blob.core.windows.net/raw/hubspot/users/**/*.json"
+        columns:
+          - name: id
+            description: "Unique identifier for the user"
+            tests:
+              - not_null
+          - name: properties
+            description: "JSON object containing all HubSpot properties"
+          - name: createdAt
+            description: "Timestamp when the record was created"
+          - name: updatedAt
+            description: "Timestamp when the record was last updated"
+          - name: archived
+            description: "Whether the record is archived"
+          - name: filename
+            description: "Source filename"
