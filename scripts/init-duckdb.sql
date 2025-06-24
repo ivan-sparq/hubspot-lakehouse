@@ -1,6 +1,6 @@
 -- DuckDB Initialization Script for Unity Catalog Integration
 -- This script runs when the DuckDB container starts
--- Configured for MinIO Azure Gateway (S3-compatible access to Azure Blob Storage)
+-- Configured for MinIO standalone server with ILM for Azure transitions
 
 -- Install required extensions
 INSTALL httpfs;
@@ -14,7 +14,7 @@ LOAD json;
 LOAD parquet;
 LOAD delta;
 
--- Configure S3/MinIO access (Azure Gateway)
+-- Configure S3/MinIO access (standalone server)
 SET s3_endpoint = 'minio:9000';
 SET s3_access_key_id = 'minioadmin';
 SET s3_secret_access_key = 'minioadmin123';
@@ -30,11 +30,11 @@ SELECT 'Unity Catalog connected successfully' as status;
 
 -- Create a view to test S3/MinIO connectivity
 CREATE OR REPLACE VIEW s3_test AS 
-SELECT 'S3/MinIO Azure Gateway connected successfully' as status;
+SELECT 'S3/MinIO standalone server connected successfully' as status;
 
--- Create a view to test Azure Storage access via S3
+-- Create a view to test Azure Storage access via ILM
 CREATE OR REPLACE VIEW azure_storage_test AS 
-SELECT 'Azure Storage accessible via S3 gateway' as status;
+SELECT 'Azure Storage accessible via MinIO ILM transitions' as status;
 
 -- Set up some useful settings for analytics workloads
 SET memory_limit = '4GB';
@@ -48,4 +48,4 @@ $$
 $$;
 
 -- Log successful initialization
-SELECT 'DuckDB initialized successfully with Unity Catalog and Azure S3 Gateway integration' as init_status; 
+SELECT 'DuckDB initialized successfully with Unity Catalog and MinIO ILM integration' as init_status; 

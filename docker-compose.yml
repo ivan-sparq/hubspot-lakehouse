@@ -12,15 +12,13 @@ services:
       - MINIO_ROOT_USER=minioadmin
       - MINIO_ROOT_PASSWORD=minioadmin123
       - MINIO_BROWSER_REDIRECT_URL=http://localhost:9001
-      # Azure Storage Gateway Configuration
-      - AZURE_STORAGE_ACCOUNT=${AZURE_STORAGE_ACCOUNT}
-      - AZURE_STORAGE_KEY=${AZURE_STORAGE_KEY}
     volumes:
+      - minio_data:/data
       - ./config/minio:/root/.minio
     networks:
       - lakehouse_network
-    # Gateway mode - connects directly to Azure Blob Storage
-    command: gateway azure
+    # Standalone MinIO server (not deprecated gateway mode)
+    command: server /data --console-address ":9001"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
       interval: 30s
@@ -117,6 +115,7 @@ services:
 
 volumes:
   unitycatalog_data:
+  minio_data:
   dbt_models:
     driver: local
 

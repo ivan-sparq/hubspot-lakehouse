@@ -1,284 +1,306 @@
-# HubSpot Lakehouse with Unity Catalog
+# HubSpot Lakehouse POC
 
-A modern data lakehouse solution for HubSpot communications data using Unity Catalog, DuckDB, and dbt with MinIO Azure Gateway.
+A proof-of-concept data lakehouse solution using **Unity Catalog**, **DuckDB**, and **dbt core** to process HubSpot communications data. This solution uses **MinIO** as a standalone object storage server with **Object Lifecycle Management (ILM)** to automatically transition data to Azure Storage for cost optimization.
 
 ## Architecture
 
-This solution provides a containerized data lakehouse with the following components:
+```
+Azure Storage (ADLS) ←→ MinIO (Standalone + ILM) ←→ Unity Catalog ←→ DuckDB → dbt
+```
 
-- **Unity Catalog**: Metadata management and S3-compatible storage connectivity
-- **MinIO**: S3-compatible gateway to Azure Blob Storage (direct access, no sync needed)
-- **DuckDB**: High-performance analytical database (self-serve compute engine)
+### Key Components
+
+- **MinIO**: Standalone object storage server with ILM for automatic Azure transitions
+- **Unity Catalog**: Open-source metadata catalog for data governance
+- **DuckDB**: In-process analytical database for fast queries
 - **dbt**: Data transformation and modeling
-- **Azure Storage**: Data storage for all layers (raw, silver, gold)
+- **Azure Storage**: Long-term data storage with automatic transitions
 
-## Data Flow
+### Data Flow
 
-```
-Azure Storage (ADLS) ←→ MinIO (S3 Gateway) ←→ Unity Catalog ←→ DuckDB → dbt → Silver/Gold Layers
-```
+1. **Raw Data**: HubSpot communications data stored in Azure Storage
+2. **Initial Sync**: Data synced to MinIO for local processing
+3. **Processing**: Unity Catalog + DuckDB + dbt transform data through silver → gold layers
+4. **ILM Transitions**: MinIO automatically transitions objects to Azure based on lifecycle rules
+5. **Cost Optimization**: Recent data stays local for performance, older data moves to Azure
 
-### Why MinIO Azure Gateway?
+## Prerequisites
 
-Unity Catalog has better support for S3-compatible storage than Azure Data Lake Storage (ADLS). MinIO acts as an S3 gateway to Azure Blob Storage, providing:
-- **Direct Azure Storage access** - No data sync required
-- **Better Unity Catalog compatibility** - Native S3 protocol support
-- **Real-time data access** - Data stays in Azure, accessed via S3
-- **Unified access** - Single S3 endpoint for all storage operations
-- **Future-proof** - Easy migration to other S3-compatible storage
-
-### Data Layers
-
-1. **Raw Layer**: `s3://raw/hubspot/communications/YYYYMMDD/HHMMSS.json`
-   - Hourly JSON files from HubSpot
-   - Directly accessed from Azure Storage via S3 gateway
-
-2. **Silver Layer**: Cleaned and validated communications data
-   - Data quality checks
-   - Business logic validation
-   - Structured format
-
-3. **Gold Layer**: Aggregated business insights
-   - Daily, weekly, monthly summaries
-   - Key performance metrics
-   - Business intelligence ready
+- Docker and Docker Compose
+- Azure Storage account with HubSpot data
+- Python 3.8+ (for local development)
 
 ## Quick Start
 
-### Prerequisites
+### 1. Environment Setup
 
-- Docker and Docker Compose
-- Azure Storage account access
-- Azure Storage key or Service Principal
+```bash
+# Copy environment template
+cp env.example .env
 
-### Setup
-
-1. **Clone the repository**
-   ```bash
-   git clone <repository-url>
-   cd hubspot-lakehouse
-   ```
-
-2. **Configure environment variables**
-   ```bash
-   cp env.example .env
-   # Edit .env with your Azure Storage credentials
-   ```
-
-3. **Start the services**
-   ```bash
-   docker-compose up -d
-   ```
-
-4. **Test Azure gateway configuration**
-   ```bash
-   ./scripts/test-minio-azure-gateway.sh
-   ```
-
-5. **Connect to DuckDB**
-   ```bash
-   ./scripts/connect-duckdb.sh
-   ```
-
-## Services
-
-### MinIO (Ports 9000, 9001)
-- **S3-compatible gateway to Azure Blob Storage**
-- Web console for data management
-- Direct access to Azure Storage containers
-- No data sync required
-
-### Unity Catalog (Port 8080)
-- Metadata management
-- S3 storage connectivity via MinIO
-- Schema and table definitions
-
-### DuckDB (Port 8081)
-- **Self-serve analytical query engine**
-- Unity Catalog integration
-- HTTP API for external connections
-- **No local data storage** - all data accessed via Azure Storage via S3
-- **Compute engine only** - perfect for cloud deployment
-
-### dbt Core
-- Data transformation pipeline
-- Model development
-- Data quality testing
-
-## DuckDB Self-Serve Usage
-
-### Connection Methods
-
-1. **Interactive CLI**
-   ```bash
-   docker exec -it duckdb duckdb
-   ```
-
-2. **HTTP API (for applications)**
-   ```bash
-   curl http://localhost:8081/health
-   ```
-
-3. **MinIO Console**
-   ```bash
-   http://localhost:9001
-   # Username: minioadmin
-   # Password: minioadmin123
-   ```
-
-4. **Python/Jupyter Integration**
-   ```python
-   import duckdb
-   conn = duckdb.connect('http://localhost:8081')
-   ```
-
-5. **Execute SQL files**
-   ```bash
-   docker exec -i duckdb duckdb < examples/duckdb-queries.sql
-   ```
-
-### Example Queries (Azure S3 Paths)
-
-```sql
--- Test Unity Catalog connection
-SELECT * FROM unity_catalog_test;
-
--- Test S3/MinIO connection
-SELECT * FROM s3_test;
-
--- Test Azure Storage access
-SELECT * FROM azure_storage_test;
-
--- Query raw HubSpot data from Azure Storage via S3
-SELECT 
-    id,
-    properties['hs_engagement_type'] as engagement_type,
-    properties['hs_createdate'] as created_date
-FROM read_json_auto('s3://raw/hubspot/communications/20250531/140000.json')
-LIMIT 10;
-
--- Analyze communications by type
-SELECT 
-    properties['hs_engagement_type'] as engagement_type,
-    COUNT(*) as count
-FROM read_json_auto('s3://raw/hubspot/communications/20250531/*.json')
-GROUP BY properties['hs_engagement_type'];
+# Edit .env with your Azure Storage credentials
+AZURE_STORAGE_ACCOUNT=your-storage-account
+AZURE_STORAGE_KEY=your-storage-key
 ```
 
-### Python Integration Example
+### 2. Start Services
+
+```bash
+# Start MinIO standalone server
+docker-compose up -d minio
+
+# Setup MinIO with Azure ILM
+./scripts/setup-minio-azure-ilm.sh
+
+# Sync initial data from Azure to MinIO
+./scripts/sync-azure-to-minio-initial.sh
+
+# Start Unity Catalog and DuckDB
+docker-compose up -d unity-catalog duckdb
+```
+
+### 3. Verify Setup
+
+```bash
+# Check service status
+docker-compose ps
+
+# Test DuckDB connection
+./scripts/connect-duckdb.sh
+
+# Run example queries
+docker exec -i duckdb duckdb < examples/duckdb-queries.sql
+```
+
+## Configuration
+
+### MinIO ILM Rules
+
+The setup configures automatic transitions to Azure Storage:
+
+- **Raw data**: Transitions to Azure after 7 days
+- **Silver data**: Transitions to Azure after 3 days  
+- **Gold data**: Transitions to Azure after 1 day
+
+### Data Paths
+
+```
+s3://raw/hubspot/communications/YYYYMMDD/HHMMSS.json
+s3://silver/ (processed data)
+s3://gold/ (aggregated insights)
+```
+
+## Usage
+
+### DuckDB Queries
+
+```sql
+-- Test connections
+SELECT * FROM unity_catalog_test;
+SELECT * FROM s3_test;
+SELECT * FROM azure_storage_test;
+
+-- Query HubSpot data
+SELECT * FROM read_json_auto('s3://raw/hubspot/communications/20250531/140000.json');
+
+-- Process data through layers
+SELECT 
+    communication_id,
+    contact_id,
+    channel_type,
+    created_at,
+    status
+FROM read_json_auto('s3://raw/hubspot/communications/*.json')
+WHERE created_at >= '2025-05-31';
+```
+
+### Python Integration
 
 ```python
 import duckdb
-import pandas as pd
 
 # Connect to DuckDB
 conn = duckdb.connect('http://localhost:8081')
 
-# Query data from Azure Storage via S3
+# Query data
 df = conn.execute("""
-    SELECT 
-        id,
-        properties['hs_engagement_type'] as engagement_type,
-        properties['hs_createdate'] as created_date
-    FROM read_json_auto('s3://raw/hubspot/communications/20250531/140000.json')
+    SELECT * FROM read_json_auto('s3://raw/hubspot/communications/*.json')
     LIMIT 10
 """).df()
 
-print(df.head())
+print(df)
 ```
 
-## Data Models
+### dbt Models
 
-### Staging Layer
-- `stg_hubspot_communications`: Cleaned raw data with proper typing
+```bash
+# Navigate to dbt project
+cd dbt
 
-### Silver Layer
-- `silver_hubspot_communications`: Validated data with business logic
+# Run dbt models
+dbt run --profiles-dir config/dbt
 
-### Gold Layer
-- `gold_communications_summary`: Aggregated insights by day/week/month
+# Generate documentation
+dbt docs generate
+```
 
-## Query Examples
+## Services
 
-### Basic Data Exploration
+| Service | URL | Credentials |
+|---------|-----|-------------|
+| MinIO Console | http://localhost:9001 | minioadmin / minioadmin123 |
+| MinIO API | http://localhost:9000 | minioadmin / minioadmin123 |
+| Unity Catalog | http://localhost:8080 | - |
+| DuckDB HTTP | http://localhost:8081 | - |
+
+## Data Model
+
+### Staging Layer (`dbt/models/staging/`)
+
+Raw data ingestion and basic cleaning:
+
 ```sql
--- Query raw communications from Azure Storage
-SELECT * FROM read_json_auto('s3://raw/hubspot/communications/20250531/*.json') LIMIT 10;
-
--- Query silver layer
+-- stg_hubspot_communications.sql
 SELECT 
-    communication_type,
-    count(*) as count
-FROM read_parquet('s3://silver/silver_hubspot_communications.parquet')
-GROUP BY communication_type;
+    communication_id,
+    contact_id,
+    channel_type,
+    created_at,
+    status,
+    metadata
+FROM {{ source('raw', 'hubspot_communications') }}
+```
 
--- Query gold layer summaries
+### Silver Layer (`dbt/models/silver/`)
+
+Cleaned and validated data:
+
+```sql
+-- silver_communications.sql
 SELECT 
-    time_period,
-    total_communications,
-    total_meetings,
-    meeting_completion_rate
-FROM read_parquet('s3://gold/gold_communications_summary.parquet')
-WHERE granularity = 'daily'
-ORDER BY time_period DESC;
+    communication_id,
+    contact_id,
+    channel_type,
+    created_at,
+    status,
+    CASE 
+        WHEN status = 'SENT' THEN 'SUCCESS'
+        WHEN status = 'FAILED' THEN 'FAILED'
+        ELSE 'PENDING'
+    END as delivery_status
+FROM {{ ref('stg_hubspot_communications') }}
+WHERE created_at IS NOT NULL
+```
+
+### Gold Layer (`dbt/models/gold/`)
+
+Business insights and aggregations:
+
+```sql
+-- gold_daily_communications_summary.sql
+SELECT 
+    DATE(created_at) as date,
+    channel_type,
+    delivery_status,
+    COUNT(*) as total_communications,
+    COUNT(CASE WHEN delivery_status = 'SUCCESS' THEN 1 END) as successful_communications
+FROM {{ ref('silver_communications') }}
+GROUP BY 1, 2, 3
 ```
 
 ## Development
 
-### Adding New Models
-1. Create new SQL files in `dbt/models/`
-2. Follow naming conventions: `stg_*`, `silver_*`, `gold_*`
-3. Run `dbt run --select model_name` to test
+### Adding New Data Sources
 
-### Testing
+1. Add source configuration in `dbt/models/staging/_sources.yml`
+2. Create staging model in `dbt/models/staging/`
+3. Create silver model in `dbt/models/silver/`
+4. Create gold model in `dbt/models/gold/`
+
+### MinIO Management
+
 ```bash
-# Run all tests
-dbt test
+# Access MinIO console
+open http://localhost:9001
 
-# Run specific model tests
-dbt test --select model_name
+# List buckets
+docker exec minio mc ls myminio
+
+# Upload files
+docker exec minio mc cp local-file.json myminio/raw/
+
+# Check ILM rules
+docker exec minio mc ilm rule ls myminio/raw --transition
 ```
 
-### Documentation
+### Unity Catalog Integration
+
+Unity Catalog provides metadata management and governance:
+
+- **Data Discovery**: Browse and search datasets
+- **Lineage Tracking**: Understand data dependencies
+- **Access Control**: Manage permissions and policies
+- **Data Quality**: Monitor and validate data
+
+## Troubleshooting
+
+### Common Issues
+
+1. **MinIO not starting**: Check Docker logs with `docker-compose logs minio`
+2. **Azure connection issues**: Verify credentials in `.env` file
+3. **DuckDB connection errors**: Ensure MinIO is running first
+4. **ILM not working**: Check MinIO logs and verify Azure credentials
+
+### Logs
+
 ```bash
-# Generate documentation
-dbt docs generate
-dbt docs serve
+# View all logs
+docker-compose logs
+
+# View specific service logs
+docker-compose logs minio
+docker-compose logs unity-catalog
+docker-compose logs duckdb
 ```
 
-## Cloud Deployment
+## Production Considerations
 
-This solution is designed for easy cloud deployment:
+### Security
 
-### Azure Container Instances
-- Use the same docker-compose configuration
-- Scale DuckDB instances as needed
-- No persistent storage required (compute-only)
-- MinIO gateway provides S3 access to Azure Storage
+- Use Azure Managed Identity instead of storage keys
+- Enable TLS for all connections
+- Implement proper access controls
+- Use Azure Key Vault for secrets management
 
-### Azure Kubernetes Service
-- Deploy as Kubernetes pods
-- Auto-scaling based on demand
-- Load balancing for multiple DuckDB instances
-- MinIO can be deployed as a StatefulSet
+### Performance
 
-### Benefits of Self-Serve DuckDB with MinIO Azure Gateway
-- **No data storage costs** - all data in Azure Storage
-- **Pay-per-use compute** - scale up/down as needed
-- **Unified governance** - all access through Unity Catalog
-- **S3 compatibility** - works with any S3-compatible storage
-- **High performance** - columnar storage and vectorized execution
-- **Better Unity Catalog support** - native S3 protocol
-- **Direct Azure access** - no data sync required
-- **Real-time data** - always up-to-date from Azure Storage
+- Configure MinIO with appropriate resources
+- Use DuckDB's parallel processing capabilities
+- Optimize dbt models for incremental processing
+- Monitor ILM transition performance
+
+### Monitoring
+
+- Set up health checks for all services
+- Monitor Azure Storage costs
+- Track data processing metrics
+- Implement alerting for failures
 
 ## Contributing
 
-1. Follow the existing code structure
-2. Add tests for new models
-3. Update documentation
-4. Use conventional commit messages
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Test thoroughly
+5. Submit a pull request
 
 ## License
 
-[Add your license information here]
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## References
+
+- [MinIO Object Lifecycle Management](https://min.io/docs/minio/linux/administration/object-management/transition-objects-to-azure.html)
+- [Unity Catalog Documentation](https://docs.databricks.com/data-governance/unity-catalog/index.html)
+- [DuckDB Documentation](https://duckdb.org/docs/)
+- [dbt Documentation](https://docs.getdbt.com/)
